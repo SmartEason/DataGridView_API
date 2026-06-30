@@ -40,10 +40,10 @@ myenv\Scripts\activate.ps1
 # 啟動虛擬環境 (macOS/Linux)
 source venv/bin/activate
 
-3. 安裝依賴套件
+# 安裝依賴套件
 pip install -r requirements.txt
 
-4. 設定資料庫結構
+# 設定資料庫結構
 打開您慣用的 MySQL 客戶端（如 MySQL Workbench、phpMyAdmin）。
 
 建立一個新的資料庫 (例如 env_live_data)。
@@ -52,7 +52,7 @@ pip install -r requirements.txt
 
 SQL
 SOURCE path/to/API.sql;
-5. 設定環境變數
+# 設定環境變數
 
 複製 .env.example 檔案並將其重新命名為 .env。
 
