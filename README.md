@@ -19,7 +19,7 @@ MySQL Server (本機或遠端資料庫)
 安裝與設定
 請依照以下步驟建立您的開發環境：
 
-1. 下載最新版本
+# 下載最新版本
 
 前往此專案首頁右側的 Releases 區塊。
 
@@ -30,8 +30,6 @@ MySQL Server (本機或遠端資料庫)
 打開終端機 (或命令提示字元) 並進入解壓縮後的資料夾：
 
 cd path/to/your/extracted/folder
-
-2. 建立虛擬環境
 
 # 建立虛擬環境(名稱可自訂)
 python -m venv myenv
