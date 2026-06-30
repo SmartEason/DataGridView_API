@@ -29,24 +29,23 @@ MySQL Server (本機或遠端資料庫)
 
 打開終端機 (或命令提示字元) 並進入解壓縮後的資料夾：
 
-Bash
 cd path/to/your/extracted/folder
+
 2. 建立虛擬環境
 
-Bash
-# 建立名為 'venv' 的虛擬環境
-python -m venv venv
+# 建立虛擬環境(名稱可自訂)
+python -m venv myenv
 
-# 啟動虛擬環境 (Windows)
-venv\Scripts\activate
+# 啟動虛擬環境 (Windows VSC)
+myenv\Scripts\activate.ps1
+
 # 啟動虛擬環境 (macOS/Linux)
 source venv/bin/activate
+
 3. 安裝依賴套件
-
-Bash
 pip install -r requirements.txt
-4. 設定資料庫結構
 
+4. 設定資料庫結構
 打開您慣用的 MySQL 客戶端（如 MySQL Workbench、phpMyAdmin）。
 
 建立一個新的資料庫 (例如 env_live_data)。
