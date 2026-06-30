@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>台灣環境智慧城市數據戰情探索儀表板</title>
+    
+    <link rel="stylesheet" href="/static/style.css">
+    
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌦️ 台灣智慧城市全方位物聯網動態戰情室</h1>
+            <div class="update-time">資訊同步時間：<span id="last-update">資料傳輸中...</span></div>
+        </header>
+
+        <div class="control-panel">
+            <div class="control-group">
+                <label for="county-select">📍 觀測核心區域：</label>
+                <select id="county-select" onchange="loadDataFromBackend()">
+                    <option value="臺北市" selected>臺北市</option>
+                    <option value="新北市">新北市</option>
+                    <option value="桃園市">桃園市</option>
+                    <option value="臺中市">臺中市</option>
+                    <option value="台南市">台南市</option>
+                    <option value="高雄市">高雄市</option>
+                    <option value="新竹市">新竹市</option>
+                    <option value="新竹縣">新竹縣</option>
+                    <option value="苗栗縣">苗栗縣</option>
+                    <option value="嘉義市">嘉義市</option>
+                    <option value="屏東縣">屏東縣</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="tabs-container">
+            <button class="tab-btn active" onclick="switchMetric('aqi', this)">空氣品質综合 (AQI)</button>
+            <button class="tab-btn" onclick="switchMetric('pm25', this)">細懸浮微粒 (PM2.5)</button>
+            <button class="tab-btn" onclick="switchMetric('rain', this)">即時降雨監控</button>
+            <button class="tab-btn" onclick="switchMetric('youbike', this)">🚲 YouBike 2.0 車況</button>
+            <button class="tab-btn" onclick="switchMetric('parking', this)">🅿️ TDX 即時停車場</button>
+            <button class="tab-btn" onclick="switchMetric('earthquake', this)">⚠️ 有感地震警報</button>
+            <button class="tab-btn" onclick="openHighwayDashboard()">🚗 國道即時路況</button>
+        </div>
+
+        <div class="cards-grid">
+            <div class="card">
+                <h3>區域平均 空品 (AQI / PM2.5)</h3>
+                <div class="value" id="avg-aqi">-</div>
+            </div>
+            <div class="card">
+                <h3>綜合災防與健康告警狀態</h3>
+                <div style="margin-top: 10px;">
+                    <span id="status-badge" class="badge bg-green">系統對齊中</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>區域 24h 最大累積降雨量</h3>
+                <div class="value" id="max-rain">- mm</div>
+            </div>
+        </div>
+
+        <div class="dashboard-layout">
+            <div class="map-container">
+                <div id="map"></div>
+            </div>
+            
+            <div class="charts-container">
+                <div class="chart-box">
+                    <div id="main-bar-chart" style="width: 100%; height: 100%;"></div>
+                </div>
+                <div class="chart-box">
+                    <div id="sub-bar-chart" style="width: 100%; height: 100%;"></div>
+                </div>
+            </div>
+        </div>
+    <div id="loading-overlay">
+            <div class="spinner"></div>
+            <h2 style="color: #2c3e50; margin-top: 20px;">📡 戰情大數據即時同步中...</h2>
+            <p style="color: #7f8c8d;">正在與政府開放資料中心建立連線</p>
+    </div>
+        <div id="highway-modal" class="highway-modal-container">
+        
+        <div class="highway-header">
+            <div class="highway-title">🛣️ 國家高速公路局 · 戰情中心</div>
+            
+            <div class="highway-filters">
+                <select id="hw-route-select" onchange="renderHighwayData()">
+                    <option value="ALL">🛣️ 所有國道</option>
+                    <option value="國道1號">國道 1 號</option>
+                    <option value="國道3號">國道 3 號</option>
+                    <option value="國道5號">國道 5 號</option>
+                </select>
+                <select id="hw-region-select" onchange="renderHighwayData()">
+                    <option value="ALL">📍 全台灣</option>
+                    <option value="NORTH">北部區段</option>
+                    <option value="CENTRAL">中部區段</option>
+                    <option value="SOUTH">南部區段</option>
+                </select>
+            </div>
+            
+            <div class="highway-subtabs">
+                <button class="subtab-btn active" onclick="switchHighwayLayer('speed', this)">🟢 車速</button>
+                <button class="subtab-btn" onclick="switchHighwayLayer('incident', this)">⚠️ 路況</button>
+                <button class="subtab-btn" onclick="switchHighwayLayer('cctv', this)">📷 CCTV</button>
+            </div>
+            
+            <button class="highway-close-btn" onclick="closeHighwayDashboard()">❌ 關閉回主戰情室</button>
+        </div>
+        
+        <div class="highway-map-container">
+            <div id="highway-map"></div>
+        </div>
+    </div>
+    </div>
+    <script>
+        // 1. 初始化全域數據集合、當前頁籤狀態與地圖拓樸
+        let aqiData = [], rainData = [], youbikeData = [], parkingData = [], eqData = [], cctvData = [], highwaySpeedData = [], highwayIncidentData = [], roadEventData = [];
+        let currentMetric = 'aqi'; // 💡 預設初始檢視的資料頁籤為 AQI
+        let dataLayer = L.layerGroup();
+        let highwayMap = null;
+        let highwayLayer = L.layerGroup();
+        let currentHighwayTab = 'speed'; // 預設顯示車速
+        let currentActiveTooltip = null;
+        const map = L.map('map').setView([23.6978, 120.9605], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18
+        }).addTo(map);
+        dataLayer.addTo(map);
+
+        // 2. 頁籤切換控制核心
+        function switchMetric(metric, element) {
+            currentMetric = metric;
+            
+            // 清除畫面上所有頁籤的選取樣式，並單獨為點擊的頁籤加上 active
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            
+            // 立即重新驅動看板渲染
+            updateDashboard();
+        }
+
+        // 3. 發送動態按需非同步請求，高效率同步數據源
+        async function loadDataFromBackend() {
+            // 💡 開關 ON：一觸發請求，立刻顯示全螢幕 Loading 動畫
+            document.getElementById('loading-overlay').style.display = 'flex';
+            
+            try {
+                const rawCounty = document.getElementById('county-select').value;
+                const targetCity = encodeURIComponent(rawCounty);
+
+                const [aqiRes, rainRes, ybRes, parkRes, eqRes, cctvRes, speedRes, incRes, eventRes] = await Promise.all([
+                    fetch('/api/aqi').then(r => r.json()).catch(() => []),
+                    fetch('/api/rainfall').then(r => r.json()).catch(() => []),
+                    fetch(`/api/youbike?county=${targetCity}`).then(r => r.json()).catch(() => []),     
+                    fetch(`/api/parking?county=${targetCity}`).then(r => r.json()).catch(() => []), 
+                    fetch('/api/earthquake').then(r => r.json()).catch(() => []),
+                    fetch('/api/highway-cctv').then(r => r.json()).catch(() => []),
+                    fetch('/api/highway-speed').then(r => r.json()).catch(() => []),
+                    fetch('/api/highway-incident').then(r => r.json()).catch(() => []),
+                    fetch('/api/highway-road-events').then(r => r.json()).catch(() => [])
+                ]);
+                
+                
+                aqiData = aqiRes;
+                rainData = rainRes;
+                youbikeData = ybRes;
+                parkingData = parkRes;
+                eqData = eqRes;
+                cctvData = cctvRes;
+                highwaySpeedData = speedRes;
+                highwayIncidentData = incRes;
+                roadEventData = eventRes;
+
+                document.getElementById('last-update').innerText = new Date().toLocaleString('zh-TW');
+                updateDashboard();
+            } catch (error) {
+                console.error("物聯網通道異常:", error);
+                document.getElementById('status-badge').innerText = "❌ 資料流中斷";
+                document.getElementById('status-badge').className = "badge bg-red";
+            } finally {
+                // 💡 開關 OFF：不論成功或失敗，資料回來後就隱藏 Loading 動畫
+                document.getElementById('loading-overlay').style.display = 'none';
+            }
+        }
+
+
+        // 4. 核心渲染看板中樞
+        function updateDashboard() {
+            const rawCounty = document.getElementById('county-select').value;
+            
+            // 字體歸一化校正
+            const normalize = (str) => str ? str.replace(/台/g, '臺') : '';
+            const selectedCounty = normalize(rawCounty);
+
+            // 動態選區資料清洗
+            const filteredAQI = aqiData.filter(d => normalize(d.county) === selectedCounty);
+            const filteredRain = rainData.filter(d => normalize(d.county) === selectedCounty);
+            const filteredYB = youbikeData.filter(d => normalize(d.county) === selectedCounty);
+            const filteredParking = parkingData.filter(d => normalize(d.county) === selectedCounty);
+
+            // 計算 KPI 摘要
+            const avgAQI = filteredAQI.length ? (filteredAQI.reduce((sum, d) => sum + Number(d.aqi), 0) / filteredAQI.length).toFixed(1) : 0;
+            const avgPM25 = filteredAQI.length ? (filteredAQI.reduce((sum, d) => sum + Number(d.pm25 || 0), 0) / filteredAQI.length).toFixed(1) : 0;
+            const maxRain24h = filteredRain.length ? Math.max(...filteredRain.map(d => Number(d.rainfall_24h || 0))) : 0;
+
+            document.getElementById('avg-aqi').innerText = `${avgAQI} / ${avgPM25}`;
+            document.getElementById('max-rain').innerText = `${maxRain24h.toFixed(1)} mm`;
+
+            // 防災健康警報中樞
+            const badge = document.getElementById('status-badge');
+            badge.className = "badge";
+            if (maxRain24h > 80) { badge.innerText = "🚨 豪雨防災警戒"; badge.classList.add("bg-red"); }
+            else if (avgPM25 > 35) { badge.innerText = "😷 空氣懸浮不良"; badge.classList.add("bg-yellow"); }
+            else if (avgAQI > 100) { badge.innerText = "🔴 空品健康警告"; badge.classList.add("bg-red"); }
+            else { badge.innerText = "🟢 環境安全良好"; badge.classList.add("bg-green"); }
+
+            // 清除舊圖層與邊界定義
+            dataLayer.clearLayers();
+            let mapBounds = [];
+            const commonLayout = { margin: { t: 30, b: 40, l: 40, r: 20 }, font: { size: 10 }, paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' };
+            const stationNames = filteredAQI.map(d => d.sitename);
+
+            // =====================================
+            // 地圖打點分支 (依據全域變數 currentMetric)
+            // =====================================
+            if (currentMetric === 'aqi' || currentMetric === 'pm25') {
+                filteredAQI.forEach(d => {
+                    if(d.lat && d.lon) {
+                        const val = currentMetric === 'aqi' ? Number(d.aqi) : Number(d.pm25 || 0);
+                        const color = currentMetric === 'aqi' 
+                            ? (val > 100 ? '#e74c3c' : (val > 50 ? '#f1c40f' : '#2ecc71'))
+                            : (val > 35 ? '#e74c3c' : (val > 15 ? '#f1c40f' : '#2ecc71'));
+                        
+                        const marker = L.circleMarker([d.lat, d.lon], {
+                            radius: currentMetric === 'aqi' ? 10 + (val/20) : 10 + (val/5),
+                            fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.8
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif;">
+                                <b style="font-size:15px; color:#2c3e50;">🏢 測站: ${d.sitename}</b><hr style="margin:8px 0;">
+                                <b>AQI 指數:</b> ${d.aqi} (${d.status})<br>
+                                <b>PM2.5:</b> ${d.pm25 || '0'} μg/m³<br>
+                                <b>PM10:</b> ${d.pm10 || '0'} μg/m³<br>
+                                <b>O3:</b> ${d.o3 || '0'} ppm
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+            } else if (currentMetric === 'rain') {
+                filteredRain.forEach(d => {
+                    if(d.lat && d.lon) {
+                        const val1h = Number(d.rainfall_1h);
+                        const val24h = Number(d.rainfall_24h);
+                        const marker = L.circleMarker([d.lat, d.lon], {
+                            radius: 10 + val1h, fillColor: '#3498db', color: '#fff', weight: 1.5, fillOpacity: 0.8
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif;">
+                                <b style="font-size:15px; color:#2980b9;">🌧️ 氣象站: ${d.station_name}</b><hr style="margin:8px 0;">
+                                <b>1H 即時雨量:</b> ${val1h} mm<br>
+                                <b>24H 累積雨量:</b> ${val24h} mm
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+            } else if (currentMetric === 'youbike') {
+                filteredYB.forEach(d => {
+                    if(d.lat && d.lon) {
+                        const bikes = Number(d.available_bikes);
+                        const color = bikes > 5 ? '#2ecc71' : (bikes > 0 ? '#f1c40f' : '#e74c3c');
+                        const marker = L.circleMarker([d.lat, d.lon], {
+                            radius: 8, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif;">
+                                <b style="font-size:15px; color:#d35400;">🚲 YouBike: ${d.station_name}</b><hr style="margin:8px 0;">
+                                <b>可借車輛:</b> <span style="color:#2980b9;font-weight:bold;font-size:16px;">${bikes}</span> 台<br>
+                                <b>可還空位:</b> ${d.empty_spaces} 格
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+            } else if (currentMetric === 'parking') {
+                filteredParking.forEach(d => {
+                    if(d.lat && d.lon) {
+                        const avail = Number(d.available_spaces);
+                        const total = Number(d.total_spaces);
+                        let color = '#2ecc71'; 
+                        if (avail <= 5) color = '#e74c3c';
+                        else if (avail <= 20) color = '#f1c40f';
+
+                        const marker = L.circleMarker([d.lat, d.lon], {
+                            radius: 8, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif;">
+                                <b style="font-size:15px; color:#2c3e50;">🅿️ ${d.parking_name}</b><hr style="margin:8px 0;">
+                                <b>剩餘車位:</b> <span style="color:${color};font-weight:bold;font-size:16px;">${avail}</span><br>
+                                <b>總車位數:</b> ${total}
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+            } else if (currentMetric === 'earthquake') {
+                eqData.forEach(d => {
+                    if(d.lat && d.lon) {
+                        const mag = Number(d.magnitude);
+                        const marker = L.circle([d.lat, d.lon], {
+                            radius: mag * 6000, fillColor: '#e74c3c', color: '#c0392b', weight: 2, fillOpacity: 0.4
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif;">
+                                <b style="font-size:15px; color:#c0392b;">⚠️ 地震報告</b><hr style="margin:8px 0;">
+                                <b>詳情:</b> ${d.report_content}<br>
+                                <b>規模:</b> <span style="color:#c0392b;font-weight:bold;font-size:16px;">${mag}</span><br>
+                                <b>深度:</b> ${d.depth} km
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+            } else if (currentMetric === 'cctv') {
+                // 💡 因為國道貫穿全台，我們不過濾縣市，直接在地圖上顯示該區域附近的所有攝影機
+                cctvData.forEach(d => {
+                    if(d.lat && d.lon) {
+                        // 只顯示目前地圖視角附近的攝影機，避免全台 3000 支攝影機同時渲染導致瀏覽器卡頓
+                        const marker = L.circleMarker([d.lat, d.lon], {
+                            radius: 6, fillColor: '#8e44ad', color: '#fff', weight: 1.5, fillOpacity: 0.9
+                        }).bindPopup(`
+                            <div style="font-family: sans-serif; text-align:center;">
+                                <b style="font-size:15px; color:#8e44ad;">📷 監視器: ${d.road_name}</b><hr style="margin:8px 0;">
+                                <a href="${d.video_url}" target="_blank" style="display:inline-block; margin-top:5px; padding:8px 15px; background:#8e44ad; color:white; text-decoration:none; border-radius:5px; font-weight:bold;">
+                                    🎥 點此開啟即時影像
+                                </a>
+                            </div>
+                        `);
+                        dataLayer.addLayer(marker);
+                        mapBounds.push([d.lat, d.lon]);
+                    }
+                });
+                // 清空主圖表，專注於地圖影像
+                Plotly.react('main-bar-chart', [], { ...commonLayout, title: `📷 國道影像監視器分佈 (請在地圖點擊圖示)` });
+            }
+            // 鏡頭聚焦控制
+            if (mapBounds.length > 0 && currentMetric !== 'earthquake') {
+                map.flyToBounds(mapBounds, { padding: [40, 40], maxZoom: 13 });
+            } else if (currentMetric === 'earthquake' && mapBounds.length > 0) {
+                map.flyToBounds(mapBounds, { padding: [50, 50], maxZoom: 8 });
+            }
+
+            const tracePM25 = { x: stationNames, y: filteredAQI.map(d => Number(d.pm25 || 0)), type: 'bar', name: 'PM2.5', marker: {color: '#9b59b6'} };
+            const tracePM10 = { x: stationNames, y: filteredAQI.map(d => Number(d.pm10 || 0)), type: 'bar', name: 'PM10', marker: {color: '#95a5a6'} };
+
+            // =====================================
+            // 主排行榜圖表渲染分支
+            // =====================================
+            if (currentMetric === 'aqi') {
+                Plotly.react('main-bar-chart', [{ x: stationNames, y: filteredAQI.map(d => Number(d.aqi)), type: 'bar', marker: { color: filteredAQI.map(d => d.aqi > 100 ? '#e74c3c' : (d.aqi > 50 ? '#f1c40f' : '#2ecc71')) } }], { ...commonLayout, title: `📊 ${selectedCounty} 各觀測站 AQI 排名` }, { responsive: true, displayModeBar: false });
+                Plotly.react('sub-bar-chart', [tracePM25, tracePM10], { ...commonLayout, barmode: 'group', title: `🔬 區域空氣懸浮微粒結構分析` }, { responsive: true, displayModeBar: false });
+            } else if (currentMetric === 'pm25') {
+                Plotly.react('main-bar-chart', [{ x: stationNames, y: filteredAQI.map(d => Number(d.pm25 || 0)), type: 'bar', marker: { color: '#8e44ad' } }], { ...commonLayout, title: `🌫️ ${selectedCounty} 各站 PM2.5 濃度排名` }, { responsive: true, displayModeBar: false });
+                Plotly.react('sub-bar-chart', [tracePM25, tracePM10], { ...commonLayout, barmode: 'group', title: `🔬 區域空氣懸浮微粒結構分析` }, { responsive: true, displayModeBar: false });
+            } else if (currentMetric === 'rain') {
+                Plotly.react('main-bar-chart', [{ x: filteredRain.map(d => d.station_name), y: filteredRain.map(d => Number(d.rainfall_1h)), type: 'bar', marker: { color: '#3498db' } }], { ...commonLayout, title: `☔ ${selectedCounty} 各站即時雨量排名(1h)` }, { responsive: true, displayModeBar: false });
+                Plotly.react('sub-bar-chart', [{ x: filteredRain.map(d => d.station_name), y: filteredRain.map(d => Number(d.rainfall_24h)), type: 'bar', marker: { color: '#3498db' } }], { ...commonLayout, title: `☔ ${selectedCounty} 各站即時雨量排名(24h)` }, { responsive: true, displayModeBar: false });
+            } else if (currentMetric === 'youbike') {
+                const sortedYB = filteredYB.sort((a,b) => b.available_bikes - a.available_bikes).slice(0, 20);
+                Plotly.react('main-bar-chart', [{ x: sortedYB.map(d => d.station_name), y: sortedYB.map(d => Number(d.available_bikes)), type: 'bar', marker: { color: '#e67e22' } }], { ...commonLayout, title: `🚲 ${selectedCounty} YouBike 可借車輛 (前20大站點)` }, { responsive: true, displayModeBar: false });
+            } else if (currentMetric === 'parking') {
+                const sortedParking = filteredParking.sort((a,b) => b.available_spaces - a.available_spaces).slice(0, 20);
+                Plotly.react('main-bar-chart', [{ x: sortedParking.map(d => d.parking_name), y: sortedParking.map(d => Number(d.available_spaces)), type: 'bar', marker: { color: '#34495e' } }], { ...commonLayout, title: `🅿️ ${selectedCounty} 剩餘空位 (前20大停車場)` }, { responsive: true, displayModeBar: false });
+            } else if (currentMetric === 'earthquake') {
+                Plotly.react('main-bar-chart', [{ x: eqData.map((d,i) => `報告 ${i+1}`), y: eqData.map(d => Number(d.magnitude)), type: 'bar', marker: { color: '#c0392b' } }], { ...commonLayout, title: `📈 近期顯著有感地震規模排行` }, { responsive: true, displayModeBar: false });
+            }
+
+            // 永久渲染副圖表：空品懸浮微粒結構分析
+            // const tracePM25 = { x: stationNames, y: filteredAQI.map(d => Number(d.pm25 || 0)), type: 'bar', name: 'PM2.5', marker: {color: '#9b59b6'} };
+            // const tracePM10 = { x: stationNames, y: filteredAQI.map(d => Number(d.pm10 || 0)), type: 'bar', name: 'PM10', marker: {color: '#95a5a6'} };
+            // Plotly.react('sub-bar-chart', [tracePM25, tracePM10], { ...commonLayout, barmode: 'group', title: `🔬 區域空氣懸浮微粒結構分析` }, { responsive: true, displayModeBar: false });
+            // 💡 補上這段：讓圖表與地圖同時重新計算大小，完美撐滿容器！
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+                map.invalidateSize(); // 👈 新增這行：強制 Leaflet 地圖擴張填滿白框！
+            }, 100);
+        }
+
+        // 🔓 開啟國道獨立全螢幕畫面
+        function openHighwayDashboard() {
+            const modal = document.getElementById('highway-modal');
+            
+            // 💡 1. 顯示為 flex 彈性盒子
+            modal.style.display = 'flex'; 
+            // 💡 2. 【新增這行！】強制瀏覽器「上下排列」，絕對不准左右並排！
+            modal.style.flexDirection = 'column'; 
+
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    if (!highwayMap) {
+                        highwayMap = L.map('highway-map').setView([23.6978, 120.9605], 8);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '© OpenStreetMap contributors'
+                        }).addTo(highwayMap);
+                        highwayLayer.addTo(highwayMap);
+                    }
+                    
+                    highwayMap.invalidateSize(true);
+                    setTimeout(() => { highwayMap.invalidateSize(true); }, 100);
+                    
+                    renderHighwayData();
+                }, 300);
+            });
+        }
+
+        // 🔒 關閉國道獨立全螢幕畫面
+        function closeHighwayDashboard() {
+            document.getElementById('highway-modal').style.display = 'none';
+        }
+
+        // 🔄 切換二級頁籤（車速、路況、CCTV）
+        function switchHighwayLayer(layerType, element) {
+            currentHighwayTab = layerType;
+            
+            // 切換按鈕的高亮樣式
+            document.querySelectorAll('.subtab-btn').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+            
+            // 驅動圖層重新重繪
+            renderHighwayData();
+        }
+
+        // 🎨 國道專屬圖層渲染引擎
+        function renderHighwayData() {
+            if (!highwayMap) return;
+            highwayLayer.clearLayers(); 
+            let mapBounds = []; 
+
+            const routeFilter = document.getElementById('hw-route-select').value;
+            const regionFilter = document.getElementById('hw-region-select').value;
+
+            const checkRegion = (lat) => {
+                if (regionFilter === 'ALL') return true;
+                if (regionFilter === 'NORTH' && lat >= 24.4) return true;
+                if (regionFilter === 'CENTRAL' && lat < 24.4 && lat >= 23.4) return true;
+                if (regionFilter === 'SOUTH' && lat < 23.4) return true;
+                return false;
+            };
+
+            // 🟢 渲染【即時車速】模式
+            if (currentHighwayTab === 'speed') {
+                if (highwaySpeedData && highwaySpeedData.length > 0) {
+                    highwaySpeedData.forEach(d => {
+                        if (routeFilter !== 'ALL' && (!d.road_name || !d.road_name.includes(routeFilter))) return;
+                        if (!checkRegion(d.lat)) return;
+
+                        if (d.lat && d.lon) {
+                            let color = '#2ecc71'; 
+                            if (d.speed < 40) color = '#e74c3c'; 
+                            else if (d.speed < 80) color = '#f1c40f'; 
+
+                            const marker = L.circleMarker([d.lat, d.lon], { 
+                                radius: 8, fillColor: color, color: '#fff', weight: 1.5, fillOpacity: 0.9 
+                            }).bindTooltip(`
+                                <div style="font-family:sans-serif; padding: 3px;">
+                                    <b style="color:${color};font-size:14px;">🛣️ ${d.road_name}</b><br>
+                                    <b>路段:</b> ${d.section_name || '未知路段'}<br><hr style="margin:5px 0;">
+                                    即時車速: <span style="font-size:16px;font-weight:bold;color:${color}">${d.speed} km/h</span>
+                                </div>
+                            `, { direction: 'top', offset: [0, -10], opacity: 0.95 });
+                            highwayLayer.addLayer(marker);
+                            mapBounds.push([d.lat, d.lon]);
+                        }
+                    });
+                }
+            
+            // ⚠️ 渲染【即時路況與特殊事件】模式
+            } else if (currentHighwayTab === 'incident') {
+                // [1] 一般壅塞事件渲染
+                if (highwayIncidentData && highwayIncidentData.length > 0) {
+                    highwayIncidentData.forEach(d => {
+                        if (routeFilter !== 'ALL' && (!d.road_name || !d.road_name.includes(routeFilter))) return;
+                        if (!checkRegion(d.lat)) return;
+
+                        if (d.lat && d.lon) {
+                            const marker = L.circleMarker([d.lat, d.lon], {
+                                radius: 8, fillColor: '#e74c3c', color: '#fff', weight: 1.5, fillOpacity: 0.9
+                            }).bindTooltip(`
+                                <div style="font-family:sans-serif; max-width:250px; padding: 3px;">
+                                    ${d.description}
+                                </div>
+                            `, { direction: 'top', offset: [0, -10], opacity: 0.95 });
+                            highwayLayer.addLayer(marker);
+                            mapBounds.push([d.lat, d.lon]);
+                        }
+                    });
+                }
+
+                // [2] 特殊工程事件 (車禍、施工) 渲染
+                if (roadEventData && roadEventData.length > 0) {
+                    roadEventData.forEach(d => {
+                        if (routeFilter !== 'ALL' && (!d.road_name || !d.road_name.includes(routeFilter))) return;
+                        if (!checkRegion(d.lat)) return;
+
+                        if (d.lat && d.lon) {
+                            const marker = L.circleMarker([d.lat, d.lon], {
+                                radius: 8, fillColor: d.color, color: '#2c3e50', weight: 2, fillOpacity: 1, dashArray: '4'
+                            }).addTo(highwayLayer);
+
+                            const content = `
+                                <div style="text-align:left; padding: 12px; width: 300px; background-color: #fffaf0; border-left: 6px solid ${d.color}; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+                                    <b style="color:${d.color}; font-size:16px; display:block; margin-bottom:8px;">
+                                        ${d.icon} ${d.road_name}
+                                    </b>
+                                    <div style="margin-bottom: 8px;">
+                                        <span style="display:inline-block; background:${d.color}; color:white; padding:3px 8px; border-radius:4px; font-size:13px; font-weight:bold;">
+                                            ${d.event_type}
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 14px; color: #2c3e50; line-height: 1.6; font-weight: bold; margin-bottom: 5px;">
+                                        📍 影響：${d.impact}
+                                    </div>
+                                    <div style="font-size: 13px; color: #555; line-height: 1.5; background: #fff; padding: 8px; border-radius: 4px; border: 1px solid #ddd;">
+                                        ${d.description}
+                                    </div>
+                                </div>
+                            `;
+
+                            marker.on('mouseover', function(e) {
+                                marker.bindTooltip(content, { direction: 'top', offset: [0, -10], className: 'event-tooltip', interactive: true }).openTooltip();
+                            });
+                            marker.bindPopup(content, { maxWidth: 300 });
+                            mapBounds.push([d.lat, d.lon]);
+                        }
+                    });
+                }
+            // 📷 渲染【CCTV 影像】模式
+            } else if (currentHighwayTab === 'cctv') {
+                if (cctvData && cctvData.length > 0) {
+                    cctvData.forEach(d => {
+                        if (routeFilter !== 'ALL' && (!d.road_name || !d.road_name.includes(routeFilter))) return;
+                        if (!checkRegion(d.lat)) return;
+
+                        if (d.lat && d.lon) {
+                            const marker = L.circleMarker([d.lat, d.lon], { 
+                                radius: 7, fillColor: '#8e44ad', color: '#fff', weight: 2, fillOpacity: 0.9 
+                            }).addTo(highwayLayer);
+
+                            const content = `
+                                <div style="text-align:center; padding: 12px; width: 320px; max-width: 90vw; background-color: white; border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,0.3);">
+                                    <b style="color:#8e44ad; font-size:15px; display:block; margin-bottom:8px;">📷 ${d.road_name}</b>
+                                    <hr style="margin:5px 0; border-color: #bdc3c7;">
+                                    <div style="width: 100%; aspect-ratio: 16 / 9; background: #000; margin: 10px 0; border-radius: 6px; overflow: hidden; position: relative;">
+                                        <iframe src="${d.video_url}" style="width: 100%; height: 100%; border: none; pointer-events: none; display: block;" scrolling="no"></iframe>
+                                        <vid>
+                                    </div>
+                                    <a href="${d.video_url}" target="_blank" style="display:block; padding:10px 0; background:#8e44ad; color:white; text-decoration:none; border-radius:6px; font-weight:bold; font-size:14px; width: 100%; transition: 0.2s;">
+                                        🎥 另開視窗觀看完整影像
+                                    </a>
+                                </div>
+                            `;
+
+                            marker.on('mouseover', function(e) {
+                                marker.bindTooltip(content, { direction: 'top', offset: [0, -10], className: 'cctv-tooltip', interactive: true }).openTooltip();
+                            });
+                            marker.bindPopup(content, { maxWidth: 350, className: 'cctv-popup' });
+                            mapBounds.push([d.lat, d.lon]);
+                        }
+                    });
+                }
+            // 📷 渲染【CCTV 影像】模式 (HTML5 串流版)
+            } else if (currentHighwayTab === 'cctv') {
+                if (cctvData && cctvData.length > 0) {
+                    cctvData.forEach(d => {
+                        if (routeFilter !== 'ALL' && (!d.road_name || !d.road_name.includes(routeFilter))) return;
+                        if (!checkRegion(d.lat)) return;
+
+                        if (d.lat && d.lon) {
+                            const marker = L.circleMarker([d.lat, d.lon], { 
+                                radius: 7, fillColor: '#8e44ad', color: '#fff', weight: 2, fillOpacity: 0.9 
+                            }).addTo(highwayLayer);
+
+                            // 定義統一的視窗內容
+                            const content = `
+                                <div style="text-align:center; padding: 12px; width: 320px; max-width: 90vw; background-color: white; border-radius: 10px; box-shadow: 0 6px 16px rgba(0,0,0,0.3);">
+                                    <b style="color:#8e44ad; font-size:15px; display:block; margin-bottom:8px;">📷 ${d.road_name}</b>
+                                    <hr style="margin:5px 0; border-color: #bdc3c7;">
+                                    
+                                    <div style="width: 100%; aspect-ratio: 16 / 9; background: #000; margin: 10px 0; border-radius: 6px; overflow: hidden; position: relative;">
+                                        <iframe 
+                                            src="${d.video_url}" 
+                                            style="width: 100%; height: 100%; border: none; pointer-events: none; display: block;" 
+                                            scrolling="no">
+                                        </iframe>
+                                    </div>
+                                    
+                                    <a href="${d.video_url}" target="_blank" 
+                                    style="display:block; padding:10px 0; background:#8e44ad; color:white; text-decoration:none; border-radius:6px; font-weight:bold; font-size:14px; width: 100%; transition: 0.2s;">
+                                        🎥 另開視窗觀看完整影像
+                                    </a>
+                                </div>
+                            `;
+
+                            // 1. 懸停顯示邏輯
+                            marker.on('mouseover', function(e) {
+                                marker.bindTooltip(content, {
+                                    direction: 'top',
+                                    offset: [0, -10],
+                                    className: 'cctv-tooltip',
+                                    interactive: true
+                                }).openTooltip();
+                            });
+
+                            // 2. 點擊顯示邏輯 (綁定 Popup)
+                            marker.bindPopup(content, {
+                                maxWidth: 350,
+                                className: 'cctv-popup'
+                            });
+
+                            mapBounds.push([d.lat, d.lon]);
+                        }
+                    });
+                }
+            }
+        }
+        // 啟動資料自動加載
+        loadDataFromBackend();
+        setInterval(loadDataFromBackend, 600000); 
+    </script>
+</body>
+</html>
