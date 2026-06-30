@@ -29,7 +29,7 @@ MySQL Server (本機或遠端資料庫)
 
 打開終端機 (或命令提示字元) 並進入解壓縮後的資料夾：
 
-cd path/to/your/extracted/folder
+cd FilePath
 
 # 建立虛擬環境(名稱可自訂)
 python -m venv myenv
