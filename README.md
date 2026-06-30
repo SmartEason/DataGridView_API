@@ -62,9 +62,7 @@ SOURCE path/to/API.sql;
 
 執行應用程式
 設定完成後，執行以下指令啟動應用程式：
-
-Bash
-python main.py
+uvicorn main:app --reload
 伺服器啟動後，打開網頁瀏覽器並前往本機位址 (通常為 http://127.0.0.1:5000 或終端機顯示的特定位址)。
 
 客製化與修改
